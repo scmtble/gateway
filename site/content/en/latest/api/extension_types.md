@@ -601,6 +601,9 @@ https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/compression/brotli
 _Appears in:_
 - [Compression](#compression)
 
+| Field | Type | Required | Default | Description |
+| ---   | ---  | ---      | ---     | ---         |
+| `chooseFirst` | _boolean_ |  false  |  | ChooseFirst defines whether to choose the first compressor in the list. |
 
 
 #### CIDR
@@ -2169,6 +2172,9 @@ https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/compression/gzip/c
 _Appears in:_
 - [Compression](#compression)
 
+| Field | Type | Required | Default | Description |
+| ---   | ---  | ---      | ---     | ---         |
+| `chooseFirst` | _boolean_ |  false  |  | ChooseFirst defines whether to choose the first compressor in the list. |
 
 
 #### HTTP10Settings

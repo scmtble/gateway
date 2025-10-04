@@ -1201,7 +1201,9 @@ func buildCompression(compression []*egv1a1.Compression) []*ir.Compression {
 	irCompression := make([]*ir.Compression, 0, len(compression))
 	for _, c := range compression {
 		irCompression = append(irCompression, &ir.Compression{
-			Type: c.Type,
+			Type:   c.Type,
+			Brotli: c.Brotli,
+			Gzip:   c.Gzip,
 		})
 	}
 

@@ -38,5 +38,7 @@ http:
     traffic:
       compression:
       - type: Brotli
+        brotli:
+          chooseFirst: true
       - type: Gzip
       - type: Brotli

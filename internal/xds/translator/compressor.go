@@ -44,8 +44,8 @@ func (*compressor) patchHCM(mgr *hcmv3.HttpConnectionManager, irListener *ir.HTT
 	}
 
 	var (
-		brotli bool
-		gzip   bool
+		brotli *ir.Compression
+		gzip   *ir.Compression
 		filter *hcmv3.HttpFilter
 		err    error
 	)
@@ -54,10 +54,10 @@ func (*compressor) patchHCM(mgr *hcmv3.HttpConnectionManager, irListener *ir.HTT
 		if route.Traffic != nil && route.Traffic.Compression != nil {
 			for _, irComp := range route.Traffic.Compression {
 				if irComp.Type == egv1a1.BrotliCompressorType {
-					brotli = true
+					brotli = irComp
 				}
 				if irComp.Type == egv1a1.GzipCompressorType {
-					gzip = true
+					gzip = irComp
 				}
 			}
 		}
@@ -66,20 +66,20 @@ func (*compressor) patchHCM(mgr *hcmv3.HttpConnectionManager, irListener *ir.HTT
 	// Add the compressor filters for all the compression types required by the routes.
 	// All the compressor filters are disabled at the HCM level.
 	// The per route filter config will enable the compressor filters for the routes that require them.
-	if brotli {
+	if brotli != nil {
 		brotliFilterName := compressorFilterName(egv1a1.BrotliCompressorType)
 		if !hcmContainsFilter(mgr, brotliFilterName) {
-			if filter, err = buildCompressorFilter(egv1a1.BrotliCompressorType); err != nil {
+			if filter, err = buildCompressorFilter(brotli); err != nil {
 				return err
 			}
 			mgr.HttpFilters = append(mgr.HttpFilters, filter)
 		}
 	}
 
-	if gzip {
+	if gzip != nil {
 		gzipFilterName := compressorFilterName(egv1a1.GzipCompressorType)
 		if !hcmContainsFilter(mgr, gzipFilterName) {
-			if filter, err = buildCompressorFilter(egv1a1.GzipCompressorType); err != nil {
+			if filter, err = buildCompressorFilter(gzip); err != nil {
 				return err
 			}
 			mgr.HttpFilters = append(mgr.HttpFilters, filter)
@@ -94,7 +94,7 @@ func compressorFilterName(compressorType egv1a1.CompressorType) string {
 }
 
 // buildCompressorFilter builds a compressor filter with the provided compressionType.
-func buildCompressorFilter(compressionType egv1a1.CompressorType) (*hcmv3.HttpFilter, error) {
+func buildCompressorFilter(compression *ir.Compression) (*hcmv3.HttpFilter, error) {
 	var (
 		compressorProto *compressorv3.Compressor
 		extensionName   string
@@ -102,15 +102,22 @@ func buildCompressorFilter(compressionType egv1a1.CompressorType) (*hcmv3.HttpFi
 		extensionAny    *anypb.Any
 		compressorAny   *anypb.Any
 		err             error
+		chooseFirst     bool
 	)
 
-	switch compressionType {
+	switch compression.Type {
 	case egv1a1.BrotliCompressorType:
 		extensionName = "envoy.compression.brotli.compressor"
 		extensionMsg = &brotliv3.Brotli{}
+		if compression.Brotli != nil {
+			chooseFirst = compression.Brotli.ChooseFirst
+		}
 	case egv1a1.GzipCompressorType:
 		extensionName = "envoy.compression.gzip.compressor"
 		extensionMsg = &gzipv3.Gzip{}
+		if compression.Gzip != nil {
+			chooseFirst = compression.Gzip.ChooseFirst
+		}
 	}
 
 	if extensionAny, err = proto.ToAnyWithValidation(extensionMsg); err != nil {
@@ -122,6 +129,7 @@ func buildCompressorFilter(compressionType egv1a1.CompressorType) (*hcmv3.HttpFi
 			Name:        extensionName,
 			TypedConfig: extensionAny,
 		},
+		ChooseFirst: chooseFirst,
 	}
 
 	if compressorAny, err = proto.ToAnyWithValidation(compressorProto); err != nil {
@@ -129,7 +137,7 @@ func buildCompressorFilter(compressionType egv1a1.CompressorType) (*hcmv3.HttpFi
 	}
 
 	return &hcmv3.HttpFilter{
-		Name: compressorFilterName(compressionType),
+		Name: compressorFilterName(compression.Type),
 		ConfigType: &hcmv3.HttpFilter_TypedConfig{
 			TypedConfig: compressorAny,
 		},
@@ -155,8 +163,8 @@ func (*compressor) patchRoute(route *routev3.Route, irRoute *ir.HTTPRoute, _ *ir
 	}
 
 	var (
-		brotli        bool
-		gzip          bool
+		brotli        *ir.Compression
+		gzip          *ir.Compression
 		perFilterCfg  map[string]*anypb.Any
 		compressorAny *anypb.Any
 		err           error
@@ -164,14 +172,14 @@ func (*compressor) patchRoute(route *routev3.Route, irRoute *ir.HTTPRoute, _ *ir
 
 	for _, irComp := range irRoute.Traffic.Compression {
 		if irComp.Type == egv1a1.BrotliCompressorType {
-			brotli = true
+			brotli = irComp
 		}
 		if irComp.Type == egv1a1.GzipCompressorType {
-			gzip = true
+			gzip = irComp
 		}
 	}
 
-	if !brotli && !gzip {
+	if brotli == nil && gzip == nil {
 		return nil
 	}
 
@@ -186,7 +194,7 @@ func (*compressor) patchRoute(route *routev3.Route, irRoute *ir.HTTPRoute, _ *ir
 		return err
 	}
 
-	if brotli {
+	if brotli != nil {
 		brotliFilterName := compressorFilterName(egv1a1.BrotliCompressorType)
 		if _, ok := perFilterCfg[brotliFilterName]; ok {
 			// This should not happen since this is the only place where the filter
@@ -196,7 +204,7 @@ func (*compressor) patchRoute(route *routev3.Route, irRoute *ir.HTTPRoute, _ *ir
 		}
 		route.TypedPerFilterConfig[brotliFilterName] = compressorAny
 	}
-	if gzip {
+	if gzip != nil {
 		gzipFilterName := compressorFilterName(egv1a1.GzipCompressorType)
 		if _, ok := perFilterCfg[gzipFilterName]; ok {
 			// This should not happen since this is the only place where the filter
